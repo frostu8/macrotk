@@ -17,7 +17,7 @@ use macrotk::{meta::Meta, FromMeta};
 use proc_macro::TokenStream;
 
 #[derive(FromMeta)]
-pub struct MacroMeta {
+struct MacroMeta {
     something: LitStr,
     otherthing: LitStr,
 }
