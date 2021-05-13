@@ -1,4 +1,4 @@
-use syn::parse::{ParseStream};
+use syn::parse::{ParseStream, Parse};
 use syn::spanned::Spanned;
 use syn::{Path, Token, Error};
 
@@ -12,7 +12,7 @@ use std::ops::Deref;
 ///
 /// You should be using the derive macro instead.
 pub trait FromMeta: Sized {
-    fn from_meta(a: Meta) -> Result<Self, Error>;
+    fn from_meta(a: MetaStream) -> Result<Self, Error>;
 }
 
 /// Types that can be parsed as values of a [`Meta`] list.
@@ -22,11 +22,11 @@ pub trait FromMetaValue: Sized {
 
 /// A list of meta values that can be interpreted as a list or as a name-value
 /// paired list.
-pub struct Meta<'a>(ParseStream<'a>);
+pub struct MetaStream<'a>(ParseStream<'a>);
 
-impl<'a> Meta<'a> {
-    pub fn new(p: ParseStream<'a>) -> Meta<'a> {
-        Meta(p)
+impl<'a> MetaStream<'a> {
+    pub fn new(p: ParseStream<'a>) -> MetaStream<'a> {
+        MetaStream(p)
     }
 
     /// Gets the next name of the meta.
@@ -130,3 +130,61 @@ impl FromMetaValue for Name {
     }
 }
 
+/// A helper type for parsing `FromMeta` values from `TokenStream`s.
+pub struct Meta<T>(pub T);
+
+impl<T> Meta<T> {
+    /// Extracts the inner `T`.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> Deref for Meta<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> Parse for Meta<T>
+where
+    T: FromMeta
+{
+    fn parse(p: ParseStream) -> Result<Self, Error> {
+        T::from_meta(MetaStream::new(p)).map(|t| Meta(t))
+    }
+}
+
+// All `FromMeta` values can also be `FromMetaValue` with the use of `{ }`
+impl<T> FromMetaValue for T
+where
+    T: FromMeta
+{
+    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
+        let content;
+        syn::braced!(content in p);
+
+        T::from_meta(MetaStream::new(&content))
+    }
+}
+
+// OTHER MISC IMPLEMENTATIONS
+impl FromMetaValue for String {
+    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
+        Ok(p.parse::<syn::LitStr>().map(|s| s.value())?)
+    }
+}
+
+impl FromMetaValue for bool {
+    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
+        Ok(p.parse::<syn::LitBool>().map(|s| s.value())?)
+    }
+}
+
+impl FromMetaValue for i64 {
+    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
+        Ok(p.parse::<syn::LitInt>().and_then(|s| s.base10_parse())?)
+    }
+}
