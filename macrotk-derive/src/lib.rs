@@ -1,9 +1,9 @@
-use syn::{DeriveInput, Data, parse_macro_input, Error, Fields, LitStr};
 use syn::spanned::Spanned as _;
+use syn::{parse_macro_input, Data, DeriveInput, Error, Fields, LitStr};
 
 use quote::quote;
 
-use proc_macro2::{TokenStream};
+use proc_macro2::TokenStream;
 
 #[proc_macro_derive(FromMeta)]
 pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -14,26 +14,30 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
 
     let item = match item.data {
         Data::Struct(s) => s,
-        Data::Enum(e) => return Error::new(
-                e.enum_token.span(),
-                "only structs are supported",
-            ).into_compile_error().into(),
-        Data::Union(e) => return Error::new(
-                e.union_token.span(),
-                "only structs are supported",
-            ).into_compile_error().into(),
+        Data::Enum(e) => {
+            return Error::new(e.enum_token.span(), "only structs are supported")
+                .into_compile_error()
+                .into()
+        }
+        Data::Union(e) => {
+            return Error::new(e.union_token.span(), "only structs are supported")
+                .into_compile_error()
+                .into()
+        }
     };
 
     let fields = match item.fields {
         Fields::Named(fields) => fields.named,
-        e => return Error::new(
-                e.span(),
-                "struct can only have named fields",
-            ).into_compile_error().into(),
+        e => {
+            return Error::new(e.span(), "struct can only have named fields")
+                .into_compile_error()
+                .into()
+        }
     };
 
     // these are the pre-definitions of each field.
-    let definitions = fields.iter()
+    let definitions = fields
+        .iter()
         .map(|field| {
             let name = field.ident.as_ref().unwrap();
             let ty = &field.ty;
@@ -60,7 +64,7 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
             }
         })
         .collect::<TokenStream>();
-    
+
     // this is us unwrapping all of the fields
     let unwrapper = fields.iter()
         .map(|field| {
@@ -96,4 +100,3 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
 
     proc_macro::TokenStream::from(expanded)
 }
-

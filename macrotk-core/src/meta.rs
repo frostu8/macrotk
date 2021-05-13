@@ -1,6 +1,6 @@
-use syn::parse::{ParseStream, Parse};
+use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{Path, Token, Error};
+use syn::{Error, Path, Token};
 
 use proc_macro2::Span;
 
@@ -96,7 +96,7 @@ impl<'a> MetaStream<'a> {
     /// list.
     pub fn next_value<T>(&self) -> Option<Result<T, Error>>
     where
-        T: FromMetaValue
+        T: FromMetaValue,
     {
         if self.0.is_empty() {
             None
@@ -145,15 +145,17 @@ impl Name {
     }
 
     fn new(path: Path) -> Name {
-        Name { 
+        Name {
             span: path.span(),
             name: path.into_token_stream().to_string(),
         }
     }
 }
 
-impl<T> From<T> for Name 
-where T: Into<String> {
+impl<T> From<T> for Name
+where
+    T: Into<String>,
+{
     fn from(s: T) -> Name {
         Name {
             name: s.into(),
@@ -202,7 +204,7 @@ impl<T> Deref for Meta<T> {
 
 impl<T> Parse for Meta<T>
 where
-    T: FromMeta
+    T: FromMeta,
 {
     fn parse(p: ParseStream) -> Result<Self, Error> {
         T::from_meta(MetaStream::new(p)).map(|t| Meta(t))
@@ -212,7 +214,7 @@ where
 // All `FromMeta` values can also be `FromMetaValue` with the use of `{ }`
 impl<T> FromMetaValue for T
 where
-    T: FromMeta
+    T: FromMeta,
 {
     fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
         let content;
@@ -228,4 +230,3 @@ impl FromMetaValue for syn::LitStr {
         p.parse::<syn::LitStr>()
     }
 }
-

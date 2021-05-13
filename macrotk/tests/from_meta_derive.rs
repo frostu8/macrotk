@@ -6,5 +6,4 @@ pub struct Test {
     help: macrotk::syn::LitStr,
 }
 
-fn main() {
-}
+fn main() {}

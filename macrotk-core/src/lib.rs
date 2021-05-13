@@ -1,7 +1,7 @@
 //! Rust macro toolkit.
 
-pub extern crate syn;
 pub extern crate quote;
+pub extern crate syn;
 
 pub use proc_macro2::Span;
 
