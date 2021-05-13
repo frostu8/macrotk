@@ -12,10 +12,42 @@ use std::ops::Deref;
 ///
 /// # Deriving
 /// ```ignore
+/// use syn::LitStr;
+///
 /// #[derive(macrotk::FromMeta)]
 /// pub struct MyMeta {
-///     keyword: String,
-///     switch: bool,
+///     keyword: LitStr,
+/// }
+/// ```
+///
+/// # Implementing
+/// When the `FromMeta` derive macro breaks, you can implement this yourself.
+/// ```
+/// # use macrotk_core as macrotk;
+/// use syn::LitStr;
+/// use syn::spanned::Spanned as _;
+///
+/// use macrotk::meta::{FromMeta, MetaStream};
+///
+/// pub struct MyMeta {
+///     keyword: Option<LitStr>,
+/// }
+///
+/// impl FromMeta for MyMeta {
+///     fn from_meta(meta: MetaStream) -> Result<Self, syn::Error> {
+///         let mut keyword: Option<LitStr> = None;
+///
+///         while let Some(name) = meta.next_name() {
+///             let name = name?;
+///
+///             match name.as_str() {
+///                 "keyword" => keyword = meta.next_value().transpose()?,
+///                 s => return Err(syn::Error::new(name.span(), format!("unknown key: {}", s))),
+///             }
+///         }
+///
+///         Ok(MyMeta { keyword })
+///     }
 /// }
 /// ```
 pub trait FromMeta: Sized {
