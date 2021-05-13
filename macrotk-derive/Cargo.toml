@@ -1,6 +1,6 @@
 [package]
 name = "macrotk-derive"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Dante Helmore <frostu8@protonmail.com>"]
 edition = "2018"
 
