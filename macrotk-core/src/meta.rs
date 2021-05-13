@@ -224,6 +224,16 @@ where
     }
 }
 
+// All `FromMetaValue` values can also be optional
+impl<T> FromMetaValue for Option<T>
+where
+    T: FromMetaValue,
+{
+    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
+        Ok(Some(T::from_meta_value(p)?))
+    }
+}
+
 // OTHER MISC IMPLEMENTATIONS
 impl FromMetaValue for syn::LitStr {
     fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
