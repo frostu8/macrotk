@@ -7,6 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 description = "The Rust macro toolkit."
 license = "Unlicense"
+readme = "../README.md"
 documentation = "https://docs.rs/macrotk"
 repository = "https://github.com/frostu8/macrotk.git"
 homepage = "https://github.com/frostu8/macrotk"

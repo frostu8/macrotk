@@ -6,6 +6,7 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 description = "macrotk core types and functions."
+readme = "../README.md"
 license = "Unlicense"
 documentation = "https://docs.rs/macrotk-core"
 repository = "https://github.com/frostu8/macrotk.git"
