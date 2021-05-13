@@ -10,7 +10,14 @@ use std::ops::Deref;
 
 /// Types that can be parsed from a [`Meta`] list.
 ///
-/// You should be using the derive macro instead.
+/// # Deriving
+/// ```ignore
+/// #[derive(macrotk::FromMeta)]
+/// pub struct MyMeta {
+///     keyword: String,
+///     switch: bool,
+/// }
+/// ```
 pub trait FromMeta: Sized {
     fn from_meta(a: MetaStream) -> Result<Self, Error>;
 }
@@ -32,16 +39,22 @@ impl<'a> MetaStream<'a> {
     /// Gets the next name of the meta.
     ///
     /// Returns `Ok(None)` if there are no more values.
-    pub fn next_name(&self) -> Result<Option<Name>, Error> {
+    pub fn next_name(&self) -> Option<Result<Name, Error>> {
         if self.0.is_empty() {
-            Ok(None)
+            None
         } else {
             // get the next path
-            let path = self.0.parse::<Path>()?;
+            let path = match self.0.parse::<Path>() {
+                Ok(path) => path,
+                Err(err) => return Some(Err(err)),
+            };
             // eat the next equals
-            self.0.parse::<Token![=]>()?;
+            match self.0.parse::<Token![=]>() {
+                Ok(_) => (),
+                Err(err) => return Some(Err(err)),
+            }
 
-            Ok(Some(Name::new(path)))
+            Some(Ok(Name::new(path)))
         }
     }
 
@@ -49,21 +62,27 @@ impl<'a> MetaStream<'a> {
     ///
     /// This can safely be called successively, as if you were interpreting a
     /// list.
-    pub fn next_value<T>(&self) -> Result<Option<T>, Error>
+    pub fn next_value<T>(&self) -> Option<Result<T, Error>>
     where
         T: FromMetaValue
     {
         if self.0.is_empty() {
-            Ok(None)
+            None
         } else {
             // parse the type
-            let result = T::from_meta_value(self.0)?;
+            let result = match T::from_meta_value(self.0) {
+                Ok(result) => result,
+                Err(err) => return Some(Err(err)),
+            };
             // eat the next comma, if it exists
             if !self.0.is_empty() {
-                self.0.parse::<Token![,]>()?;
+                match self.0.parse::<Token![,]>() {
+                    Ok(_) => (),
+                    Err(err) => return Some(Err(err)),
+                }
             }
 
-            Ok(Some(result))
+            Some(Ok(result))
         }
     }
 }
@@ -72,6 +91,7 @@ impl<'a> MetaStream<'a> {
 ///
 /// This type can be matched with string literals.
 /// ```
+/// # use macrotk_core as macrotk;
 /// use macrotk::meta::Name;
 ///
 /// let name = Name::from("howdy");

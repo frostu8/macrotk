@@ -1,4 +1,6 @@
 [workspace]
 members = [
     "macrotk",
+    "macrotk-core",
+    "macrotk-derive",
 ]
