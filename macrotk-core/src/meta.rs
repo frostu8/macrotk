@@ -191,20 +191,9 @@ where
 }
 
 // OTHER MISC IMPLEMENTATIONS
-impl FromMetaValue for String {
+impl FromMetaValue for syn::LitStr {
     fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
-        Ok(p.parse::<syn::LitStr>().map(|s| s.value())?)
+        p.parse::<syn::LitStr>()
     }
 }
 
-impl FromMetaValue for bool {
-    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
-        Ok(p.parse::<syn::LitBool>().map(|s| s.value())?)
-    }
-}
-
-impl FromMetaValue for i64 {
-    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
-        Ok(p.parse::<syn::LitInt>().and_then(|s| s.base10_parse())?)
-    }
-}

@@ -3,7 +3,7 @@ extern crate macrotk;
 
 #[derive(FromMeta)]
 pub struct Test {
-    help: String,
+    help: macrotk::syn::LitStr,
 }
 
 fn main() {
