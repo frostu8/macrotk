@@ -11,6 +11,7 @@ pub trait FromMeta: Sized {
 }
 
 /// A meta item.
+#[derive(Clone)]
 pub enum MetaValue {
     Path(Path),
     NameValue(MetaNameValue),
@@ -123,19 +124,33 @@ impl MetaValue {
         }
     }
 
-    pub fn name(&self) -> Option<&syn::Ident> {
-        let path = match self {
-            Self::Path(p) => p,
-            Self::List(list) => &list.name,
-            Self::NameValue(nv) => &nv.name,
-            _ => return None,
-        };
+    // TODO: make this a bit more cooperative
+    /// Forces the MetaValue to behave as a list.
+    ///
+    /// Does nothing if the meta is already a list.
+    pub fn as_list(&self) -> MetaValue {
+        if matches!(self, MetaValue::List(_)) {
+            self.clone()
+        } else {
+            let mut list = Punctuated::default();
 
-        path.segments.last().map(|l| &l.ident)
+            list.push(self.clone());
+
+            MetaValue::List(
+                MetaList {
+                    name: syn::parse_quote!(empty),
+                    paren: syn::token::Paren {
+                        span: Span::call_site(),
+                    },
+                    list,
+                }
+            )
+        }
     }
 
-    /// A really not nice hack for empty meta lists.
-    pub fn empty_list() -> MetaValue {
+    // TODO: make this a bit more cooperative
+    /// Gets an empty list.
+    pub fn empty() -> MetaValue {
         MetaValue::List(
             MetaList {
                 name: syn::parse_quote!(empty),
@@ -145,6 +160,17 @@ impl MetaValue {
                 list: Punctuated::default(),
             }
         )
+    }
+
+    pub fn name(&self) -> Option<&syn::Ident> {
+        let path = match self {
+            Self::Path(p) => p,
+            Self::List(list) => &list.name,
+            Self::NameValue(nv) => &nv.name,
+            _ => return None,
+        };
+
+        path.segments.last().map(|l| &l.ident)
     }
 }
 
@@ -190,6 +216,7 @@ impl Parse for MetaValue {
 }
 
 /// A meta name-value pair.
+#[derive(Clone)]
 pub struct MetaNameValue {
     pub name: Path,
     pub eq: Token![=],
@@ -197,6 +224,7 @@ pub struct MetaNameValue {
 }
 
 /// A meta list.
+#[derive(Clone)]
 pub struct MetaList {
     pub name: Path,
     pub paren: syn::token::Paren,
@@ -216,8 +244,13 @@ impl MetaList {
             .filter(|meta| meta.name().map(|n| n == name).unwrap_or(false))
             .next()?;
 
+        let item = match item {
+            MetaValue::NameValue(nv) => MetaValue::Lit(nv.value.clone()),
+            item => item.clone(),
+        };
+
         // try to convert the type
-        Some(T::from_meta(item))
+        Some(T::from_meta(&item))
     }
 }
 
@@ -246,7 +279,7 @@ where T:
     fn parse(p: ParseStream) -> Result<Meta<T>, Error> {
         if p.is_empty() {
             // use empty list
-            T::from_meta(&MetaValue::empty_list())
+            T::from_meta(&MetaValue::empty())
                 .map(|t| Meta(t))
         } else {
             p.parse::<MetaValue>()
@@ -261,7 +294,12 @@ impl FromMeta for LitStr {
     fn from_meta(meta: &MetaValue) -> Result<LitStr, Error> {
         match meta.literal()? {
             Lit::Str(lit) => Ok(lit.clone()),
-            _ => Err(Error::new(Span::call_site(), "expected string literal")),
+            _ => Err(
+                Error::new(
+                    Span::call_site(),
+                    "expected str literal",
+                )
+            )
         }
     }
 }

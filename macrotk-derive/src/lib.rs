@@ -103,7 +103,7 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
                 }
             } else {
                 quote! {
-                    #name: #name.ok_or(::macrotk::syn::Error::new(::macrotk::Span::call_site(), ::std::concat!("missing value for ", #name_str)))??,
+                    #name: __m.get(#name_str).ok_or(::macrotk::syn::Error::new(::macrotk::Span::call_site(), ::std::concat!("missing value for ", #name_str)))??,
                 }
             }
         });
@@ -113,19 +113,12 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
             fn from_meta(
                 __m: &::macrotk::meta::MetaValue,
             ) -> ::std::result::Result<Self, ::macrotk::syn::Error> {
-                match __m {
-                    ::macrotk::meta::MetaValue::List(__m) => {
-                        Ok(#type_name {
-                            #(#unwrapper)*
-                        })
-                    }
-                    _ => Err(
-                        ::macrotk::syn::Error::new(
-                            ::macrotk::Span::call_site(),
-                            ::std::concat!("expected a list of arguments"),
-                        )
-                    )
-                }
+                let __m = __m.as_list();
+                let __m = __m.list().unwrap();
+
+                Ok(#type_name {
+                    #(#unwrapper)*
+                })
             }
         }
     };
