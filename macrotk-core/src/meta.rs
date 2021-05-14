@@ -1,200 +1,238 @@
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{Error, Path, Token};
+use syn::punctuated::Punctuated;
+use syn::{Error, Path, Token, Lit, LitStr};
 
 use proc_macro2::Span;
 
-use quote::ToTokens as _;
-
-use std::ops::Deref;
-
 /// Types that can be parsed from a [`Meta`] list.
-///
-/// # Deriving
-/// ```ignore
-/// use syn::LitStr;
-///
-/// #[derive(macrotk::FromMeta)]
-/// pub struct MyMeta {
-///     keyword: LitStr,
-/// }
-/// ```
-///
-/// # Implementing
-/// When the `FromMeta` derive macro breaks, you can implement this yourself.
-/// ```
-/// # use macrotk_core as macrotk;
-/// use syn::LitStr;
-/// use syn::spanned::Spanned as _;
-///
-/// use macrotk::meta::{FromMeta, MetaStream};
-///
-/// pub struct MyMeta {
-///     keyword: Option<LitStr>,
-/// }
-///
-/// impl FromMeta for MyMeta {
-///     fn from_meta(meta: MetaStream) -> Result<Self, syn::Error> {
-///         let mut keyword: Option<LitStr> = None;
-///
-///         while let Some(name) = meta.next_name() {
-///             let name = name?;
-///
-///             match name.as_str() {
-///                 "keyword" => keyword = meta.next_value().transpose()?,
-///                 s => return Err(syn::Error::new(name.span(), format!("unknown key: {}", s))),
-///             }
-///         }
-///
-///         Ok(MyMeta { keyword })
-///     }
-/// }
-/// ```
 pub trait FromMeta: Sized {
-    fn from_meta(a: MetaStream) -> Result<Self, Error>;
+    fn from_meta(a: &MetaValue) -> Result<Self, Error>;
 }
 
-/// Types that can be parsed as values of a [`Meta`] list.
-pub trait FromMetaValue: Sized {
-    fn from_meta_value(p: ParseStream) -> Result<Self, Error>;
+/// A meta item.
+pub enum MetaValue {
+    Path(Path),
+    NameValue(MetaNameValue),
+    List(MetaList),
+    Lit(Lit),
 }
 
-/// A list of meta values that can be interpreted as a list or as a name-value
-/// paired list.
-pub struct MetaStream<'a>(ParseStream<'a>);
-
-impl<'a> MetaStream<'a> {
-    pub fn new(p: ParseStream<'a>) -> MetaStream<'a> {
-        MetaStream(p)
-    }
-
-    /// Gets the next name of the meta.
-    ///
-    /// Returns `Ok(None)` if there are no more values.
-    pub fn next_name(&self) -> Option<Result<Name, Error>> {
-        if self.0.is_empty() {
-            None
-        } else {
-            // get the next path
-            let path = match self.0.parse::<Path>() {
-                Ok(path) => path,
-                Err(err) => return Some(Err(err)),
-            };
-            // eat the next equals
-            match self.0.parse::<Token![=]>() {
-                Ok(_) => (),
-                Err(err) => return Some(Err(err)),
-            }
-
-            Some(Ok(Name::new(path)))
+impl MetaValue {
+    /// Tries to take the value as a [`Path`], returning an error if it isn't
+    /// a path.
+    pub fn path(&self) -> Result<&Path, Error> {
+        match self {
+            Self::Path(p) => Ok(p),
+            Self::NameValue(nv) => Err(
+                Error::new(
+                    nv.eq.span(),
+                    "unexpected =; expected a naked path",
+                )
+            ),
+            Self::List(list) => Err(
+                Error::new(
+                    list.paren.span,
+                    "unexpected (...); expected a naked path",
+                )
+            ),
+            Self::Lit(lit) => Err(
+                Error::new(
+                    lit.span(),
+                    "expected a naked path",
+                )
+            ),
         }
     }
 
-    /// Gets the next value of the meta.
+    /// Tries to take the value as a [`MetaNameValue`], returning an error if
+    /// it isn't one.
+    pub fn name_value(&self) -> Result<&MetaNameValue, Error> {
+        match self {
+            Self::NameValue(nv) => Ok(nv),
+            Self::Path(p) => Err(
+                Error::new(
+                    p.span(),
+                    "expected =",
+                )
+            ),
+            Self::List(list) => Err(
+                Error::new(
+                    list.paren.span,
+                    "expected =",
+                )
+            ),
+            Self::Lit(lit) => Err(
+                Error::new(
+                    lit.span(),
+                    "unexpected literal; expected =",
+                )
+            ),
+        }
+    }
+
+    /// Tries to take the value as a [`Lit`], returning an error if it isn't
+    /// a literal.
+    pub fn literal(&self) -> Result<&Lit, Error> {
+        match self {
+            Self::Lit(lit) => Ok(lit),
+            Self::Path(p) => Err(
+                Error::new(
+                    p.span(),
+                    "expected a literal",
+                )
+            ),
+            Self::List(list) => Err(
+                Error::new(
+                    list.name.span(),
+                    "expected a literal",
+                )
+            ),
+            Self::NameValue(nv) => Err(
+                Error::new(
+                    nv.name.span(),
+                    "expected a literal",
+                )
+            ),
+        }
+    }
+
+    /// Tries to take the value as a [`List`], returning an error if it isn't
+    /// a list.
+    pub fn list(&self) -> Result<&MetaList, Error> {
+        match self {
+            Self::List(list) => Ok(list),
+            Self::Path(p) => Err(
+                Error::new(
+                    p.span(),
+                    "expected a list",
+                )
+            ),
+            Self::NameValue(nv) => Err(
+                Error::new(
+                    nv.eq.span(),
+                    "unexpected =; expected a list",
+                )
+            ),
+            Self::Lit(lit) => Err(
+                Error::new(
+                    lit.span(),
+                    "expected a list",
+                )
+            ),
+        }
+    }
+
+    /// A really not nice hack for empty meta lists.
+    pub fn empty_list() -> MetaValue {
+        MetaValue::List(
+            MetaList {
+                name: syn::parse_quote!(empty),
+                paren: syn::token::Paren {
+                    span: Span::call_site(),
+                },
+                list: Punctuated::default(),
+            }
+        )
+    }
+}
+
+impl From<Lit> for MetaValue {
+    fn from(l: Lit) -> MetaValue {
+        MetaValue::Lit(l)
+    }
+}
+
+impl Parse for MetaValue {
+    fn parse(p: ParseStream) -> Result<MetaValue, Error> {
+        if let Ok(name) = p.parse::<Path>() {
+            // check if we have an eq or a paren in front
+            if p.peek(syn::token::Paren) {
+                // this is a list
+                let list;
+
+                Ok(MetaValue::List(
+                    MetaList {
+                        name,
+                        paren: syn::parenthesized!(list in p),
+                        list: list.parse_terminated(Self::parse)?,
+                    }
+                ))
+            } else if p.peek(Token![=]) {
+                // this is a name-value pair
+                Ok(MetaValue::NameValue(
+                    MetaNameValue {
+                        name,
+                        eq: p.parse()?,
+                        value: p.parse()?,
+                    }
+                ))
+            } else {
+                // this is a path
+                Ok(MetaValue::Path(name))
+            }
+        } else {
+            // parse literal
+            p.parse::<Lit>().map(Into::into)
+        }
+    }
+}
+
+/// A meta name-value pair.
+pub struct MetaNameValue {
+    pub name: Path,
+    pub eq: Token![=],
+    pub value: Lit,
+}
+
+/// A meta list.
+pub struct MetaList {
+    pub name: Path,
+    pub paren: syn::token::Paren,
+    pub list: Punctuated<MetaValue, Token![,]>,
+}
+
+impl MetaList {
+    /// Gets a type by name.
     ///
-    /// This can safely be called successively, as if you were interpreting a
-    /// list.
-    pub fn next_value<T>(&self) -> Option<Result<T, Error>>
-    where
-        T: FromMetaValue,
+    /// This considers both list types ([`MetaList`]) and name-value pairs
+    /// ([`MetaNameValue`]).
+    pub fn get<T>(&self, name: &str) -> Option<Result<T, Error>> 
+    where T:
+        FromMeta,
     {
-        if self.0.is_empty() {
-            None
-        } else {
-            // parse the type
-            let result = match T::from_meta_value(self.0) {
-                Ok(result) => result,
-                Err(err) => return Some(Err(err)),
-            };
-            // eat the next comma, if it exists
-            if !self.0.is_empty() {
-                match self.0.parse::<Token![,]>() {
-                    Ok(_) => (),
-                    Err(err) => return Some(Err(err)),
+        let item = self.list.iter()
+            .filter(|meta| match meta {
+                MetaValue::NameValue(nv) => {
+                    nv.name.get_ident()
+                        .map(|ident| ident == name)
+                        .unwrap_or(false)
                 }
-            }
+                MetaValue::List(list) => {
+                    list.name.get_ident()
+                        .map(|ident| ident == name)
+                        .unwrap_or(false)
+                }
+                _ => false
+            })
+            .next()?;
 
-            Some(Ok(result))
-        }
+        // try to convert the type
+        Some(T::from_meta(item))
     }
 }
 
-/// A name of a name-value paired [`Meta`] list.
-///
-/// This type can be matched with string literals.
-/// ```
-/// # use macrotk_core as macrotk;
-/// use macrotk::meta::Name;
-///
-/// let name = Name::from("howdy");
-///
-/// match name.as_str() {
-///     "howdy" => println!("How are you doing?"),
-///     _ => panic!("Should match with \"howdy\""),
-/// }
-/// ```
-pub struct Name {
-    name: String,
-    span: Span,
-}
-
-impl Name {
-    /// Explicitly converts a `&Name` to a `&str`.
-    pub fn as_str(&self) -> &str {
-        &self
-    }
-
-    fn new(path: Path) -> Name {
-        Name {
-            span: path.span(),
-            name: path.into_token_stream().to_string(),
-        }
-    }
-}
-
-impl<T> From<T> for Name
-where
-    T: Into<String>,
-{
-    fn from(s: T) -> Name {
-        Name {
-            name: s.into(),
-            span: Span::call_site(),
-        }
-    }
-}
-
-impl Deref for Name {
-    type Target = str;
-
-    fn deref(&self) -> &str {
-        &self.name
-    }
-}
-
-impl Spanned for Name {
-    fn span(&self) -> Span {
-        self.span
-    }
-}
-
-impl FromMetaValue for Name {
-    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
-        Ok(Name::new(p.parse::<Path>()?))
-    }
-}
-
-/// A helper type for parsing `FromMeta` values from `TokenStream`s.
+/// Helper type for parsing attribute token streams in an attribute proc
+/// macro.
 pub struct Meta<T>(pub T);
 
 impl<T> Meta<T> {
-    /// Extracts the inner `T`.
     pub fn into_inner(self) -> T {
         self.0
     }
 }
 
-impl<T> Deref for Meta<T> {
+impl<T> std::ops::Deref for Meta<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -202,41 +240,40 @@ impl<T> Deref for Meta<T> {
     }
 }
 
-impl<T> Parse for Meta<T>
-where
-    T: FromMeta,
+impl<T> Parse for Meta<T> 
+where T:
+    FromMeta,
 {
-    fn parse(p: ParseStream) -> Result<Self, Error> {
-        T::from_meta(MetaStream::new(p)).map(|t| Meta(t))
+    fn parse(p: ParseStream) -> Result<Meta<T>, Error> {
+        if p.is_empty() {
+            // use empty list
+            T::from_meta(&MetaValue::empty_list())
+                .map(|t| Meta(t))
+        } else {
+            p.parse::<MetaValue>()
+                .and_then(|meta| T::from_meta(&meta))
+                .map(|t| Meta(t))
+        }
     }
 }
 
-// All `FromMeta` values can also be `FromMetaValue` with the use of `{ }`
-impl<T> FromMetaValue for T
-where
-    T: FromMeta,
+// some basic impls
+impl FromMeta for LitStr {
+    fn from_meta(meta: &MetaValue) -> Result<LitStr, Error> {
+        match meta.literal()? {
+            Lit::Str(lit) => Ok(lit.clone()),
+            _ => Err(Error::new(Span::call_site(), "expected string literal")),
+        }
+    }
+}
+
+// other impls
+impl<T> FromMeta for Option<T>
+where T:
+    FromMeta,
 {
-    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
-        let content;
-        syn::braced!(content in p);
-
-        T::from_meta(MetaStream::new(&content))
+    fn from_meta(p: &MetaValue) -> Result<Option<T>, Error> {
+        Ok(Some(T::from_meta(p)?))
     }
 }
 
-// All `FromMetaValue` values can also be optional
-impl<T> FromMetaValue for Option<T>
-where
-    T: FromMetaValue,
-{
-    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
-        Ok(Some(T::from_meta_value(p)?))
-    }
-}
-
-// OTHER MISC IMPLEMENTATIONS
-impl FromMetaValue for syn::LitStr {
-    fn from_meta_value(p: ParseStream) -> Result<Self, Error> {
-        p.parse::<syn::LitStr>()
-    }
-}

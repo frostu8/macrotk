@@ -1,5 +1,5 @@
 use syn::spanned::Spanned as _;
-use syn::{parse_macro_input, Data, DeriveInput, Error, Fields, LitStr, Ident, Type, Path, Token};
+use syn::{parse_macro_input, Data, DeriveInput, Error, Fields, LitStr, Ident, Path, Token};
 use syn::punctuated::Punctuated;
 
 use quote::quote;
@@ -8,7 +8,6 @@ use quote::ToTokens as _;
 struct NamedField {
     use_default: bool,
     ident: Ident,
-    ty: Type,
 }
 
 impl NamedField {
@@ -50,7 +49,6 @@ impl NamedField {
         Ok(NamedField {
             use_default,
             ident: f.ident.clone().unwrap(),
-            ty: f.ty.clone(),
         })
     }
 }
@@ -76,6 +74,7 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
         }
     };
 
+    // parse all of these fields
     let fields = match item.fields {
         Fields::Named(fields) => {
             match fields.named.iter()
@@ -93,35 +92,6 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
         }
     };
 
-    // these are the pre-definitions of each field.
-    let definitions = fields
-        .iter()
-        .map(|field| {
-            let name = &field.ident;
-            let ty = &field.ty;
-
-            quote! {
-                let mut #name: ::std::option::Option<#ty> = None;
-            }
-        });
-
-    // this is us actually looking for the field
-    let searches = fields.iter()
-        .map(|field| {
-            let name = &field.ident;
-            let name_str = LitStr::new(&name.to_string(), name.span());
-
-            quote! {
-                #name_str => #name = Some(
-                    __m.next_value().unwrap_or(
-                        // TODO: intelligent spans
-                        Err(::macrotk::syn::Error::new(::macrotk::Span::call_site(), ::std::concat!("expected value for ", #name_str)))
-                    )?
-                ),
-            }
-        });
-
-    // this is us unwrapping all of the fields
     let unwrapper = fields.iter()
         .map(|field| {
             let name = &field.ident;
@@ -129,11 +99,11 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
 
             if field.use_default {
                 quote! {
-                    #name: #name.unwrap_or_default(),
+                    #name: __m.get(#name_str).unwrap_or(Ok(Default::default()))?,
                 }
             } else {
                 quote! {
-                    #name: #name.ok_or(::macrotk::syn::Error::new(::macrotk::Span::call_site(), ::std::concat!("missing value for ", #name_str)))?,
+                    #name: #name.ok_or(::macrotk::syn::Error::new(::macrotk::Span::call_site(), ::std::concat!("missing value for ", #name_str)))??,
                 }
             }
         });
@@ -141,20 +111,21 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
     let expanded = quote! {
         impl ::macrotk::meta::FromMeta for #type_name {
             fn from_meta(
-                __m: ::macrotk::meta::MetaStream,
+                __m: &::macrotk::meta::MetaValue,
             ) -> ::std::result::Result<Self, ::macrotk::syn::Error> {
-                #(#definitions)*
-
-                while let Some(__name) = __m.next_name() {
-                    match __name?.as_str() {
-                        #(#searches)*
-                        s => return Err(::macrotk::syn::Error::new(::macrotk::Span::call_site(), ::std::format!("unexpected value: \"{}\"", s))),
+                match __m {
+                    ::macrotk::meta::MetaValue::List(__m) => {
+                        Ok(#type_name {
+                            #(#unwrapper)*
+                        })
                     }
+                    _ => Err(
+                        ::macrotk::syn::Error::new(
+                            ::macrotk::Span::call_site(),
+                            ::std::concat!("expected a list of arguments"),
+                        )
+                    )
                 }
-
-                Ok(#type_name {
-                    #(#unwrapper)*
-                })
             }
         }
     };
