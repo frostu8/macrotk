@@ -33,7 +33,7 @@ impl MetaValue {
             ),
             Self::List(list) => Err(
                 Error::new(
-                    list.paren.span,
+                    list.paren.map(|p| p.span).unwrap_or_else(Span::call_site),
                     "unexpected (...); expected a naked path",
                 )
             ),
@@ -59,7 +59,7 @@ impl MetaValue {
             ),
             Self::List(list) => Err(
                 Error::new(
-                    list.paren.span,
+                    list.paren.map(|p| p.span).unwrap_or_else(Span::call_site),
                     "expected =",
                 )
             ),
@@ -124,48 +124,10 @@ impl MetaValue {
         }
     }
 
-    // TODO: make this a bit more cooperative
-    /// Forces the MetaValue to behave as a list.
-    ///
-    /// Does nothing if the meta is already a list.
-    pub fn as_list(&self) -> MetaValue {
-        if matches!(self, MetaValue::List(_)) {
-            self.clone()
-        } else {
-            let mut list = Punctuated::default();
-
-            list.push(self.clone());
-
-            MetaValue::List(
-                MetaList {
-                    name: syn::parse_quote!(empty),
-                    paren: syn::token::Paren {
-                        span: Span::call_site(),
-                    },
-                    list,
-                }
-            )
-        }
-    }
-
-    // TODO: make this a bit more cooperative
-    /// Gets an empty list.
-    pub fn empty() -> MetaValue {
-        MetaValue::List(
-            MetaList {
-                name: syn::parse_quote!(empty),
-                paren: syn::token::Paren {
-                    span: Span::call_site(),
-                },
-                list: Punctuated::default(),
-            }
-        )
-    }
-
     pub fn name(&self) -> Option<&syn::Ident> {
         let path = match self {
             Self::Path(p) => p,
-            Self::List(list) => &list.name,
+            Self::List(list) => list.name.as_ref()?,
             Self::NameValue(nv) => &nv.name,
             _ => return None,
         };
@@ -180,6 +142,12 @@ impl From<Lit> for MetaValue {
     }
 }
 
+impl From<MetaList> for MetaValue {
+    fn from(l: MetaList) -> MetaValue {
+        MetaValue::List(l)
+    }
+}
+
 impl Parse for MetaValue {
     fn parse(p: ParseStream) -> Result<MetaValue, Error> {
         if let Ok(name) = p.parse::<Path>() {
@@ -187,11 +155,10 @@ impl Parse for MetaValue {
             if p.peek(syn::token::Paren) {
                 // this is a list
                 let list;
-
                 Ok(MetaValue::List(
                     MetaList {
-                        name,
-                        paren: syn::parenthesized!(list in p),
+                        name: Some(name),
+                        paren: Some(syn::parenthesized!(list in p)),
                         list: list.parse_terminated(Self::parse)?,
                     }
                 ))
@@ -224,10 +191,14 @@ pub struct MetaNameValue {
 }
 
 /// A meta list.
-#[derive(Clone)]
+///
+/// Use this as the "entrypoint" of your attribute proc macro.
+#[derive(Clone, Default)]
 pub struct MetaList {
-    pub name: Path,
-    pub paren: syn::token::Paren,
+    /// Can be `None` if this is the root list.
+    pub name: Option<Path>,
+    /// Can be `None` if this is the root list.
+    pub paren: Option<syn::token::Paren>,
     pub list: Punctuated<MetaValue, Token![,]>,
 }
 
@@ -251,6 +222,16 @@ impl MetaList {
 
         // try to convert the type
         Some(T::from_meta(&item))
+    }
+
+    pub fn parse_root_attr(p: ParseStream) -> Result<MetaList, Error> {
+        Ok(
+            MetaList {
+                name: None,
+                paren: None,
+                list: p.call(Punctuated::parse_terminated)?,
+            }
+        )
     }
 }
 
@@ -279,10 +260,11 @@ where T:
     fn parse(p: ParseStream) -> Result<Meta<T>, Error> {
         if p.is_empty() {
             // use empty list
-            T::from_meta(&MetaValue::empty())
+            T::from_meta(&MetaList::default().into())
                 .map(|t| Meta(t))
         } else {
-            p.parse::<MetaValue>()
+            p.call(MetaList::parse_root_attr)
+                .map(Into::into)
                 .and_then(|meta| T::from_meta(&meta))
                 .map(|t| Meta(t))
         }

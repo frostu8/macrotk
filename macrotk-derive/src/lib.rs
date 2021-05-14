@@ -113,8 +113,7 @@ pub fn derive_from_meta(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
             fn from_meta(
                 __m: &::macrotk::meta::MetaValue,
             ) -> ::std::result::Result<Self, ::macrotk::syn::Error> {
-                let __m = __m.as_list();
-                let __m = __m.list().unwrap();
+                let __m = __m.list()?;
 
                 Ok(#type_name {
                     #(#unwrapper)*
