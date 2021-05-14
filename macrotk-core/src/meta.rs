@@ -123,6 +123,17 @@ impl MetaValue {
         }
     }
 
+    pub fn name(&self) -> Option<&syn::Ident> {
+        let path = match self {
+            Self::Path(p) => p,
+            Self::List(list) => &list.name,
+            Self::NameValue(nv) => &nv.name,
+            _ => return None,
+        };
+
+        path.segments.last().map(|l| &l.ident)
+    }
+
     /// A really not nice hack for empty meta lists.
     pub fn empty_list() -> MetaValue {
         MetaValue::List(
@@ -202,19 +213,7 @@ impl MetaList {
         FromMeta,
     {
         let item = self.list.iter()
-            .filter(|meta| match meta {
-                MetaValue::NameValue(nv) => {
-                    nv.name.get_ident()
-                        .map(|ident| ident == name)
-                        .unwrap_or(false)
-                }
-                MetaValue::List(list) => {
-                    list.name.get_ident()
-                        .map(|ident| ident == name)
-                        .unwrap_or(false)
-                }
-                _ => false
-            })
+            .filter(|meta| meta.name().map(|n| n == name).unwrap_or(false))
             .next()?;
 
         // try to convert the type
